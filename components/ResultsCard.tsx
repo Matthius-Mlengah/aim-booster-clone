@@ -1,5 +1,7 @@
 ﻿"use client";
 
+import type React from "react";
+
 type Results = {
   accuracy: number;
   avgMs: number;
@@ -22,7 +24,7 @@ export default function ResultsCard({
   const clamp = (n: number) => (Number.isFinite(n) ? n : 0);
   const fmtPct = (n: number) => `${clamp(n).toFixed(1)}%`;
   const fmtInt = (n: number) => `${Math.round(clamp(n))}`;
-  const fmtMs  = (n: number) => fmtInt(n);
+  const fmtMs = (n: number) => fmtInt(n);
   const fmtTPM = (n: number) => (Number.isFinite(n) ? n.toFixed(0) : "0");
 
   const fmtClock = (() => {
@@ -53,7 +55,6 @@ export default function ResultsCard({
       ["Accuracy", fmtPct(stats.accuracy)],
       ["Avg reaction (ms)", fmtMs(stats.avgMs)],
       ["Median reaction (ms)", fmtMs(stats.medianMs)],
-      ["95th percentile (ms)", fmtMs(stats.p95Ms)],
       ["Targets/min", fmtTPM(stats.tpm)],
       ["Attempts", fmtInt(stats.attempts)],
     ];
@@ -67,7 +68,7 @@ export default function ResultsCard({
     y += 4;
     doc.setFontSize(10);
     doc.text(
-      "Avg = mean; Median = middle value; 95th percentile = 95% of hits were this fast or faster; Targets/min = attempts per minute.",
+      "Avg = mean; Median = middle value; Targets/min = attempts per minute.",
       14, y, { maxWidth: 180 }
     );
 
@@ -83,17 +84,16 @@ export default function ResultsCard({
       <h3 className="text-3xl font-semibold mb-4">Round Results</h3>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stat title="Time" value={fmtClock} />
         <Stat title="Accuracy" value={fmtPct(stats.accuracy)} />
         <Stat title="Avg reaction (ms)" value={fmtMs(stats.avgMs)} />
         <Stat title="Median reaction (ms)" value={fmtMs(stats.medianMs)} />
-        <Stat title="95th percentile (ms)" value={fmtMs(stats.p95Ms)} />
         <Stat title="Targets/min" value={fmtTPM(stats.tpm)} />
         <Stat title="Attempts" value={fmtInt(stats.attempts)} />
       </div>
 
       <p className="text-xs text-slate-400 mt-4">
-        Avg = mean; Median = middle value; 95th percentile = 95% of hits were this fast or faster;
-        Targets/min = attempts per minute.
+        Avg = mean; Median = middle value; Targets/min = attempts per minute.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-3">
