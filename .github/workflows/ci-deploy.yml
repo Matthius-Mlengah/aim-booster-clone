@@ -4,6 +4,22 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: "Where to deploy"
+        type: choice
+        options: [production, preview]
+        default: production
+        required: true
+      ref:
+        description: "Git ref (branch/tag/SHA). Leave empty to use current commit"
+        required: false
+      skip_tests:
+        description: "Skip tests and force a deploy (not recommended)"
+        type: boolean
+        default: false
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,9 +27,12 @@ concurrency:
 
 jobs:
   test:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -23,29 +42,54 @@ jobs:
       - run: npm run test -- --run
 
   deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main' && needs.test.result == 'success'
+    needs: [test]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.test.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.skip_tests == true || needs.test.result == 'success'))
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: ${{ (github.event_name == 'workflow_dispatch' && inputs.deployment) || 'production' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - run: npm i -g vercel@latest
+
       - name: Pull Vercel env
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=${{ env.DEPLOY_ENV }} --token="${{ secrets.VERCEL_TOKEN }}"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      - name: Build
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build (production)
+        if: ${{ env.DEPLOY_ENV == 'production' }}
+        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build (preview)
+        if: ${{ env.DEPLOY_ENV == 'preview' }}
+        run: vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
       - name: Deploy to Production
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        if: ${{ env.DEPLOY_ENV == 'production' }}
+        run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy to Preview
+        if: ${{ env.DEPLOY_ENV == 'preview' }}
+        run: vercel deploy --prebuilt --token="${{ secrets.VERCEL_TOKEN }}"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
