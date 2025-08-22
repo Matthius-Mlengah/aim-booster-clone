@@ -1,23 +1,15 @@
-export const DEBUG_ENABLED =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG === "1") ||
-  (typeof process !== "undefined" && process.env.NODE_ENV !== "production");
+export const DEBUG = false;
 
-type Level = "log" | "info" | "warn" | "error";
+type LogArgs = unknown[];
 
-function base(scope: string, level: Level) {
-  return (...args: unknown[]) => {
-    if (!DEBUG_ENABLED) return;
-    (console as any)[level](`[${scope}]`, ...args);
-  };
-}
+export const log = (...a: LogArgs): void => {
+  if (DEBUG) console.log(...a);
+};
 
-export function makeLogger(scope: string) {
-  return {
-    log: base(scope, "log"),
-    info: base(scope, "info"),
-    warn: base(scope, "warn"),
-    error: base(scope, "error"),
-  };
-}
+export const info = (...a: LogArgs): void => {
+  if (DEBUG) console.info(...a);
+};
 
-export const dbg = makeLogger("app");
+export const warn = (...a: LogArgs): void => {
+  if (DEBUG) console.warn(...a);
+};
