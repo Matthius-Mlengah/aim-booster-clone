@@ -1,105 +1,26 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
+import { currentRadius, currentTargetAlpha } from "@/features/game/model/radius";
+import type { Target } from "@/features/game/types";
 
-vi.mock("@/features/game/renderer", async () => {
-  const real = await vi.importActual<typeof import("@/features/game/renderer")>(
-    "@/features/game/renderer"
-  );
-  return {
-    ...real,
-    loadSprite: vi.fn(async () => ({ width: 64, height: 64 } as any)),
-    drawGrid: vi.fn(),
-    drawWatermarks: vi.fn(),
-    drawSprite: vi.fn(),
-    currentRadius: () => 20,        
-    currentHitRadius: () => 8,      
-  };
-});
+const target: Target = {
+  id: 1,
+  x: 100,
+  y: 100,
+  born: 1_000,
+  life: 1_000,
+  radius: 40,
+  kind: "normal",
+};
 
-vi.mock("@/features/game/difficulty", () => ({
-  getDiff: () => ({ t: 1, spawnEvery: 0, lifeMs: 60, maxTargets: 2 }),
-}));
+describe("target presentation", () => {
+  it("pops quickly to a stable radius rather than growing for its full life", () => {
+    expect(currentRadius(target, 1_000)).toBeCloseTo(31.2);
+    expect(currentRadius(target, 1_200)).toBeCloseTo(40);
+    expect(currentRadius(target, 1_800)).toBeCloseTo(40);
+  });
 
-import { createEngine } from "@/features/game/engine";
-
-function fakeCtx(): CanvasRenderingContext2D {
-  const noop = () => {};
-  return {
-    canvas: {} as any,
-    clearRect: noop, setTransform: noop, fillRect: noop,
-    beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop,
-    drawImage: noop as any, fillText: noop,
-    save: noop, restore: noop, clip: noop, closePath: noop,
-    arc: noop as any, ellipse: noop as any, strokeRect: noop as any,
-    measureText: () => ({ width: 0 } as TextMetrics),
-    createLinearGradient: () => ({ addColorStop: noop } as any),
-    createPattern: () => null,
-    createRadialGradient: () => ({ addColorStop: noop } as any),
-    getLineDash: () => [],
-    getTransform: () => new DOMMatrix(),
-    isPointInPath: () => false,
-    isPointInStroke: () => false,
-    putImageData: noop as any,
-    resetTransform: noop,
-    rotate: noop, scale: noop, setLineDash: noop as any,
-    translate: noop, transform: noop,
-    fillStyle: "#000", strokeStyle: "#000", lineWidth: 1,
-    textAlign: "left", textBaseline: "alphabetic", font: "10px sans-serif",
-    globalAlpha: 1, globalCompositeOperation: "source-over",
-    imageSmoothingEnabled: true, imageSmoothingQuality: "low",
-    direction: "inherit",
-  } as any;
-}
-
-beforeEach(() => {
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) =>
-    setTimeout(() => cb(performance.now()), 0) as unknown as number
-  );
-  vi.stubGlobal("cancelAnimationFrame", (id: number) =>
-    clearTimeout(id as unknown as number)
-  );
-});
-
-describe("engine lifecycle", () => {
-  it("initializes, spawns, handles clicks, and reports stats", async () => {
-    const canvas: any = {
-      width: 0,
-      height: 0,
-      style: {},
-      getContext: () => fakeCtx(),
-    };
-
-    const attempts: any[] = [];
-    let ended = false;
-    let lastStats: any = null;
-
-    const eng = createEngine(
-      canvas,
-      (a) => attempts.push(a),
-      () => {
-        ended = true;
-      },
-      (s) => {
-        lastStats = s;
-      }
-    );
-
-    await eng.init();
-    eng.resize(800, 450, 1);
-    eng.start();
-
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(lastStats).toBeTruthy();
-    expect(lastStats.burst).toBe(2);
-
-    eng.pointer(0, 0);
-    eng.pointer(100, 100);
-
-    await new Promise((r) => setTimeout(r, 120));
-    eng.stop();
-
-    expect(typeof eng.reset).toBe("function");
-
-    expect(lastStats.fps).toBeGreaterThan(0);
+  it("fades only near expiry", () => {
+    expect(currentTargetAlpha(target, 1_500)).toBe(1);
+    expect(currentTargetAlpha(target, 1_950)).toBeLessThan(1);
   });
 });

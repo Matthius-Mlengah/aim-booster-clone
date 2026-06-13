@@ -1,100 +1,60 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
-
-vi.mock("@/features/game/renderer", async () => {
-  const real = await vi.importActual<typeof import("@/features/game/renderer")>(
-    "@/features/game/renderer"
-  );
-  return {
-    ...real,
-    loadSprite: vi.fn(async () => ({ width: 64, height: 64 } as any)),
-    drawGrid: vi.fn(),
-    drawWatermarks: vi.fn(),
-    drawSprite: vi.fn(),
-    currentRadius: () => 20,  
-    currentHitRadius: () => 8, 
-  };
-});
-
-vi.mock("@/features/game/difficulty", () => ({
-  getDiff: () => ({ t: 1, spawnEvery: 0, lifeMs: 60, maxTargets: 2 }),
-}));
-
+import { describe, expect, it } from "vitest";
 import { createEngine } from "@/features/game/engine";
+import type { Attempt, HudStats, RoundResult } from "@/features/game/types";
+import { createFakeCanvas } from "./helpers/fakeCanvas";
 
-function fakeCtx(): CanvasRenderingContext2D {
-  const noop = () => {};
-  return {
-    canvas: {} as any,
-    clearRect: noop, setTransform: noop, fillRect: noop,
-    beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop,
-    drawImage: noop as any, fillText: noop,
-    save: noop, restore: noop, clip: noop, closePath: noop,
-    arc: noop as any, ellipse: noop as any, strokeRect: noop as any,
-    measureText: () => ({ width: 0 } as TextMetrics),
-    createLinearGradient: () => ({ addColorStop: noop } as any),
-    createPattern: () => null,
-    createRadialGradient: () => ({ addColorStop: noop } as any),
-    getLineDash: () => [],
-    getTransform: () => new DOMMatrix(),
-    isPointInPath: () => false,
-    isPointInStroke: () => false,
-    putImageData: noop as any,
-    resetTransform: noop,
-    rotate: noop, scale: noop, setLineDash: noop as any,
-    translate: noop, transform: noop,
-    fillStyle: "#000", strokeStyle: "#000", lineWidth: 1,
-    textAlign: "left", textBaseline: "alphabetic", font: "10px sans-serif",
-    globalAlpha: 1, globalCompositeOperation: "source-over",
-    imageSmoothingEnabled: true, imageSmoothingQuality: "low",
-    direction: "inherit",
-  } as any;
+function sequence(values: number[]) {
+  let index = 0;
+  return () => values[index++] ?? 0.5;
 }
 
-beforeEach(() => {
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) =>
-    setTimeout(() => cb(performance.now()), 0) as unknown as number
-  );
-  vi.stubGlobal("cancelAnimationFrame", (id: number) =>
-    clearTimeout(id as unknown as number)
-  );
-});
+describe("engine", () => {
+  it("starts a mode, scores a hit, records a miss, and returns a result", async () => {
+    let now = 1_000;
+    const frameCallbacks: FrameRequestCallback[] = [];
+    const attempts: Attempt[] = [];
+    let lastStats: HudStats | null = null;
+    let result: RoundResult | null = null;
 
-describe("engine basic lifecycle", () => {
-  it("initializes, spawns, expires, and reports stats", async () => {
-    const canvas: any = {
-      width: 0,
-      height: 0,
-      style: {},
-      getContext: () => fakeCtx(),
-    };
-
-    const attempts: any[] = [];
-    let ended = false;
-    let lastStats: any = null;
-
-    const eng = createEngine(
-      canvas,
-      (a) => attempts.push(a),
-      () => { ended = true; },
-      (s) => { lastStats = s; }
+    const engine = createEngine(
+      createFakeCanvas(),
+      (attempt) => attempts.push(attempt),
+      (roundResult) => {
+        result = roundResult;
+      },
+      (stats) => {
+        lastStats = stats;
+      },
+      {
+        now: () => now,
+        random: sequence([0.5, 0.5, 0.5]),
+        requestFrame: (callback) => {
+          frameCallbacks.push(callback);
+          return frameCallbacks.length;
+        },
+        cancelFrame: () => undefined,
+        loadSprite: async () => ({ width: 64, height: 64 }) as HTMLImageElement,
+      }
     );
 
-    await eng.init();
-    eng.resize(800, 450, 1);
-    eng.start();
+    await engine.init();
+    engine.resize(800, 450, 1);
+    engine.start("quick");
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(lastStats).toBeTruthy();
-    expect(lastStats.burst).toBe(2);
+    expect(lastStats).not.toBeNull();
+    expect((lastStats as unknown as HudStats).targets).toBe(1);
 
-    eng.pointer(0, 0);
-    eng.pointer(100, 100);
+    now = 1_200;
+    engine.pointer(400, 225);
+    engine.pointer(0, 0);
 
-    await new Promise((r) => setTimeout(r, 120));
-    eng.stop();
+    expect(attempts[0]).toMatchObject({ outcome: "hit", hit: true });
+    expect(attempts[1]).toMatchObject({ outcome: "miss", hit: false });
+    expect((lastStats as unknown as HudStats).score).toBeGreaterThan(0);
 
-    expect(typeof eng.reset).toBe("function");
-    expect(lastStats.fps).toBeGreaterThan(0);
-    expect(typeof ended).toBe("boolean");
+    engine.end();
+    expect(result).not.toBeNull();
+    expect((result as unknown as RoundResult).mode).toBe("quick");
+    expect((result as unknown as RoundResult).endReason).toBe("quit");
   });
 });

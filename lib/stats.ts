@@ -1,31 +1,54 @@
-﻿import type { Attempt } from "@/features/game/types";
+import type { Attempt } from "@/features/game/types";
+
+export type ResultsSummary = {
+  hitRate: number;
+  centrePrecision: number;
+  avgMs: number;
+  medianMs: number;
+  p95Ms: number;
+  hitsPerMinute: number;
+  hits: number;
+  missClicks: number;
+  expiredTargets: number;
+  elapsedMs: number;
+};
 
 function percentile(sorted: number[], p: number) {
   if (sorted.length === 0) return 0;
-  const idx = Math.floor((sorted.length - 1) * p);
-  return sorted[idx];
+  const index = Math.floor((sorted.length - 1) * p);
+  return sorted[index];
 }
 
-export function summarizeStats(attempts: Attempt[], elapsedMs: number) {
-  const n = attempts.length;
-  const qualities = attempts.map(a => a.quality ?? (a.hit ? 1 : 0));
+export function summarizeStats(attempts: Attempt[], elapsedMs: number): ResultsSummary {
+  const hits = attempts.filter((attempt) => attempt.outcome === "hit");
+  const missClicks = attempts.filter((attempt) => attempt.outcome === "miss").length;
+  const expiredTargets = attempts.filter((attempt) => attempt.outcome === "expired").length;
+  const clickAttempts = hits.length + missClicks;
 
-  const accuracy = n ? (100 * qualities.reduce((s, q) => s + q, 0) / n) : 0;
+  const qualitySum = hits.reduce(
+    (sum, attempt) => sum + (attempt.quality ?? 0),
+    0
+  );
 
-  const rts = attempts.filter(a => a.hit && a.rt != null).map(a => a.rt as number).sort((a,b)=>a-b);
-  const avgMs    = rts.length ? rts.reduce((s,x)=>s+x,0) / rts.length : 0;
-  const medianMs = rts.length ? rts[Math.floor(rts.length/2)] : 0;
-  const p95Ms    = percentile(rts, 0.95);
+  const reactionTimes = hits
+    .map((attempt) => attempt.rt ?? 0)
+    .sort((a, b) => a - b);
 
-  const tpm = elapsedMs > 0 ? (n * 60000) / elapsedMs : 0;
+  const avgMs = reactionTimes.length
+    ? reactionTimes.reduce((sum, reactionTime) => sum + reactionTime, 0) /
+      reactionTimes.length
+    : 0;
 
   return {
-    accuracy,
+    hitRate: clickAttempts > 0 ? (hits.length / clickAttempts) * 100 : 0,
+    centrePrecision: hits.length > 0 ? (qualitySum / hits.length) * 100 : 0,
     avgMs,
-    medianMs,
-    p95Ms,
-    tpm,
-    attempts: n,
+    medianMs: percentile(reactionTimes, 0.5),
+    p95Ms: percentile(reactionTimes, 0.95),
+    hitsPerMinute: elapsedMs > 0 ? (hits.length * 60_000) / elapsedMs : 0,
+    hits: hits.length,
+    missClicks,
+    expiredTargets,
     elapsedMs,
   };
 }
